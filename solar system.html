@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbital Flight Simulator HUD</title>
+    <style>
+        /* --- BASE STYLES & RESET --- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* Ambient Starfield */
+        .stars {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            background-image: 
+                radial-gradient(1px 1px at 25px 35px, #fff, rgba(0,0,0,0)),
+                radial-gradient(1px 1px at 85px 15px, #fff, rgba(0,0,0,0)),
+                radial-gradient(2px 2px at 150px 180px, rgba(255,255,255,0.7), rgba(0,0,0,0)),
+                radial-gradient(1.5px 1.5px at 250px 90px, rgba(150, 150, 255, 0.8), rgba(0,0,0,0));
+            background-size: 300px 300px;
+            opacity: 0.6;
+        }
+
+        /* --- HUD OVERLAYS --- */
+        .hud-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Center Reticle and Pitch Ladder */
+        .center-reticle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .pitch-ladder {
+            position: absolute;
+            height: 400px;
+            width: 150px;
+            border-left: 2px dashed rgba(100, 255, 100, 0.5);
+            border-right: 2px dashed rgba(100, 255, 100, 0.5);
+        }
+
+        .crosshair {
+            width: 40px;
+            height: 40px;
+            border: 2px solid #55ff55;
+            border-radius: 50%;
+            position: relative;
+        }
+        .crosshair::before, .crosshair::after {
+            content: '';
+            position: absolute;
+            background: #55ff55;
+        }
+        .crosshair::before { top: 50%; left: -15px; right: -15px; height: 2px; transform: translateY(-50%); }
+        .crosshair::after { left: 50%; top: -15px; bottom: -15px; width: 2px; transform: translateX(-50%); }
+
+        /* Compass / Heading Tape (Top) */
+        .heading-tape {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #55ff55;
+            font-size: 14px;
+            display: flex;
+            gap: 30px;
+            border-top: 2px solid rgba(85, 255, 85, 0.3);
+            padding-top: 5px;
+        }
+
+        /* --- DATA PANELS --- */
+        .panel {
+            position: absolute;
+            z-index: 20;
+            font-size: 12px;
+            line-height: 1.4;
+            pointer-events: auto;
+            background: rgba(0, 5, 10, 0.6);
+            padding: 10px;
+            border: 1px solid rgba(85, 255, 85, 0.1);
+            border-radius: 4px;
+        }
+
+        .left-panel { top: 20px; left: 60px; width: 260px; }
+        .right-panel { top: 20px; right: 20px; width: 300px; text-align: left; }
+        
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
+        
+        .label { color: #aaaaaa; }
+        .value { color: #ffffff; }
+        .value.highlight { color: #4facfe; }
+        .value.telemetry { color: #55ff55; }
+        .value.warning { color: #ff5555; }
+
+        .panel-header {
+            color: #55ff55;
+            border-bottom: 1px solid #55ff55;
+            padding-bottom: 3px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        /* --- TOOLBARS --- */
+        .left-toolbar {
+            position: absolute;
+            top: 20px;
+            left: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 30;
+        }
+
+        .icon-btn {
+            width: 30px;
+            height: 30px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .icon-btn:hover { background: rgba(85, 255, 85, 0.4); }
+
+        .bottom-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            min-height: 45px;
+            background: rgba(10, 20, 40, 0.9);
+            border-top: 1px solid rgba(85, 255, 85, 0.4);
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 5px 15px;
+            z-index: 30;
+            pointer-events: auto;
+            gap: 15px;
+            font-size: 12px;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .nav-buttons button {
+            background: #111;
+            color: #55ff55;
+            border: 1px solid #55ff55;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-family: inherit;
+            text-transform: uppercase;
+            font-size: 11px;
+            transition: all 0.2s ease;
+        }
+        .nav-buttons button:hover, .nav-buttons button.active { 
+            background: #55ff55; 
+            color: #000; 
+            box-shadow: 0 0 8px rgba(85, 255, 85, 0.6);
+        }
+
+        /* --- ADVANCED PLANET RENDERER --- */
+        .viewport {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 5;
+        }
+
+        .planet-container {
+            position: relative;
+            width: 500px;
+            height: 500px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .planet {
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            position: relative;
+            overflow: hidden;
+            background-size: 1000px 500px !important;
+            box-shadow: 0 0 30px rgba(79, 172, 254, 0.3);
+            transition: box-shadow 0.6s ease-in-out;
+            animation: rotateSurface 40s linear infinite;
+        }
+
+        /* Dedicated Cloud Deck for Earth/Atmospheres */
+        .clouds {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-size: 1000px 500px !important;
+            opacity: 0.55;
+            mix-blend-mode: screen; /* Drops black space, seamlessly blends cloud textures */
+            pointer-events: none;
+            z-index: 2;
+            display: none;
+            animation: rotateAtmosphere 28s linear infinite;
+        }
+
+        /* 3D Core Shading Overlay (Keeps shadow fixed while surface spins) */
+        .planet::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            box-shadow: inset -65px -65px 130px rgba(0, 0, 0, 0.95),
+                        inset 15px 15px 45px rgba(255, 255, 255, 0.15);
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        /* Planetary Rings Component */
+        .rings {
+            position: absolute;
+            width: 920px;
+            height: 280px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 4;
+            transform: rotateX(75deg) rotateY(-12deg);
+            display: none;
+            opacity: 0.85;
+            transition: all 0.5s ease;
+        }
+
+        /* --- ANIMATIONS --- */
+        @keyframes rotateSurface {
+            0% { background-position: 0px center; }
+            100% { background-position: -1000px center; }
+        }
+
+        @keyframes rotateAtmosphere {
+            0% { background-position: 0px center; }
+            100% { background-position: -1000px center; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="stars"></div>
+
+    <div class="viewport">
+        <div class="planet-container">
+            <div id="planet-rings" class="rings"></div>
+            
+            <div id="planet-body" class="planet" style="background: radial-gradient(circle at 30% 30%, #3a7bd5, #002244);">
+                <div id="planet-clouds" class="clouds"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="hud-layer">
+        <div class="heading-tape">
+            <span>150°</span>
+            <span>160°</span>
+            <span>170°</span>
+            <span style="color:#fff;">180° ▼</span>
+            <span>190°</span>
+            <span>200°</span>
+            <span>210°</span>
+        </div>
+
+        <div class="center-reticle">
+            <div class="pitch-ladder"></div>
+            <div class="crosshair"></div>
+            <div style="position: absolute; left: 62%; color: #55ff55; font-size: 12px; white-space: nowrap; line-height: 1.4;">
+                <span id="hud-target-name">Earth</span> ▷<br>
+                <span id="hud-velocity" style="color: #fff;">29.78 km/sec</span>
+            </div>
+        </div>
+
+        <div class="left-toolbar">
+            <div class="icon-btn">i</div>
+            <div class="icon-btn">☼</div>
+            <div class="icon-btn">⚙</div>
+            <div class="icon-btn">⌕</div>
+        </div>
+
+        <div class="panel left-panel">
+            <div class="panel-header">Spacecraft: Skylone</div>
+            <div class="data-row"><span class="label">Class</span> <span class="value" id="ship-class">Terrestrial Shuttle</span></div>
+            <div class="data-row"><span class="label">Distance</span> <span class="value highlight">421.3 km</span></div>
+            <div class="data-row"><span class="label">Mass</span> <span class="value">18 tons</span></div>
+            <div class="data-row"><span class="label">Flight mode</span> <span class="value">Orbital Insertion</span></div>
+            <div class="data-row"><span class="label">Warp drive</span> <span class="value" style="color: #aaa;">Offline</span></div>
+            <br>
+            <div class="data-row"><span class="label">Target Body</span> <span class="value telemetry" id="nearest-body">Earth</span></div>
+            <div class="data-row"><span class="label">Orbital Velocity</span> <span class="value" id="ship-vel-data">29.78 km/sec</span></div>
+            <div class="data-row"><span class="label">Surface Gravity</span> <span class="value" id="grav-accel">9.81 m/sec²</span></div>
+        </div>
+
+        <div class="panel right-panel">
+            <div class="panel-header">Orbital Parameters</div>
+            <div class="data-row"><span class="label">Influence body</span> <span class="value telemetry" id="orbit-body">Earth</span></div>
+            <div class="data-row"><span class="label">Eccentricity (e)</span> <span class="value" id="eccentricity">0.0167</span></div>
+            <div class="data-row"><span class="label">Inclination (i)</span> <span class="value" id="inclination">0.000°</span></div>
+            <div class="data-row"><span class="label">Arg of Periapsis (ω)</span> <span class="value" id="peri-arg">114.20°</span></div>
+            <div class="data-row"><span class="label">Mean Anomaly (M)</span> <span class="value" id="mean-anom">358.51°</span></div>
+            <br>
+            <div class="data-row"><span class="label">Periapsis (Rperi)</span> <span class="value telemetry" id="r-peri">147.10M km</span></div>
+            <div class="data-row"><span class="label">Apoapsis (Rapo)</span> <span class="value telemetry" id="r-apo">152.10M km</span></div>
+        </div>
+    </div>
+
+    <footer class="bottom-bar">
+        <div style="color: #aaaaaa; border-right: 1px solid #555; padding-right: 10px;">
+            <span id="sim-date">2026.07.08</span> <span style="color:#fff;">SYS_TIME_SYNC</span>
+        </div>
+        
+        <div style="color: #55ff55; font-weight: bold;">ORBITAL COM-LINK:</div>
+        <div class="nav-buttons" id="planet-nav">
+            </div>
+        
+        <div style="margin-left: auto; display:flex; gap: 15px;">
+            <div class="label">Telemetry Sync: <span class="value" style="color:#55ff55;">100%</span></div>
+        </div>
+    </footer>
+
+    <script>
+        // High-Resolution Photographic Maps with fallbacks and accurate System metrics
+        const planetData = {
+            'Mercury': {
+                texture: "url('https://www.solarsystemscope.com/textures/download/2k_mercury.jpg')",
+                glow: "0 0 25px rgba(165, 140, 120, 0.3)",
+                velocity: '47.36 km/sec',
+                grav: '3.70 m/sec²',
+                ecc: '0.2056',
+                inc: '7.004°',
+                omega: '29.12°',
+                meanAnom: '174.79°',
+                peri: '46.00M km',
+                apo: '69.82M km',
+                class: 'Terrestrial Planet',
+                hasClouds: false,
+                hasRings: false
+            },
+            'Venus': {
+                texture: "url('https://www.solarsystemscope.com/textures/download/2k_venus_atmosphere.jpg')",
+                glow: "0 0 30px rgba(224, 190, 130, 0.4)",
+                velocity: '35.02 km/sec',
+                grav: '8.87 m/sec²',
+                ecc: '0.0067',
+                inc: '3.394°',
+                omega: '54.88°',
+                meanAnom: '50.11°',
+                peri: '107.48M km',
+                apo: '108.94M km',
+                class: 'Terrestrial Planet',
+                hasClouds: false, // Cloud layer baked directly into main Venus texture map
+                hasRings: false
+            },
+            'Earth': {
+                // Highly realistic projection containing vivid blue oceans and clear landmass mapping/mountains
+                texture: "url('https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg')",
+                // NASA global clouds texture to sit over the top of continents and oceans
+                clouds: "url('https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg')",
+                glow: "0 0 35px rgba(79, 172, 254, 0.55)", // Atmospheric scattering visual effect
+                velocity: '29.78 km/sec',
+                grav: '9.81 m/sec²',
+                ecc: '0.0167',
+                inc: '0.000°',
+                omega: '114.20°',
+                meanAnom: '358.51°',
+                peri: '147.10M km',
+                apo: '152.10M km',
+                class: 'Terrestrial (Habitable)',
+                hasClouds: true,
+                hasRings: false
+            },
+            'Mars': {
+                texture: "url('https://www.solarsystemscope.com/textures/download/2k_mars.jpg')",
+                glow: "0 0 25px rgba(239, 68, 68, 0.4)",
+                velocity: '24.07 km/sec',
+                grav: '3.72 m/sec²',
+                ecc: '0.0934',
+                inc: '1.850°',
+                omega: '286.50°',
+                meanAnom: '19.42°',
+                peri: '206.65M km',
+                apo: '249.23M km',
+                class: 'Terrestrial Planet',
+                hasClouds: false,
+                hasRings: false
+            },
+            'Jupiter': {
+                texture: "url('https://www.solarsystemscope.com/textures/download/2k_jupiter.jpg')",
+                glow: "0 0 35px rgba(210, 155, 110, 0.3)",
+                velocity: '13.07 km/sec',
+                grav: '24.79 m/sec²',
+                ecc: '0.0489',
+                inc: '1.304°',
+                omega: '273.86°',
+                meanAnom: '20.02°',
+                peri: '740.52M km',
+                apo: '816.62M km',
+                class: 'Gas Giant System',
+                hasClouds: false,
+                hasRings: false
+            },
+            'Saturn': {
+                texture: "url('https://www.solarsystemscope.com/textures/download/2k_saturn.jpg')",
+                glow: "0 0 30px rgba(230, 200, 150, 0.25)",
+                velocity: '9.68 km/sec',
+                grav: '10.44 m/sec²',
+                ecc: '0.0565',
+                inc: '2.485°',
+                omega: '339.39°',
+                meanAnom: '317.02°',
+                peri: '1,353.57M km',
+                apo: '1,506.53M km',
+                class: 'Gas Giant System',
+                hasClouds: false,
+                hasRings: true,
+                ringGradient: "radial-gradient(circle, transparent 48%, rgba(160,130,95,0.1) 49%, rgba(215,185,145,0.7) 56%, transparent 58%, rgba(135,110,80,0.4) 60%, rgba(220,195,160,0.8) 68%, transparent 69%)"
+            },
+            'Uranus': {
+                texture: "url('https://www.solarsystemscope.com/textures/download/2k_uranus.jpg')",
+                glow: "0 0 35px rgba(160, 230, 240, 0.4)",
+                velocity: '6.80 km/sec',
+                grav: '8.69 m/sec²',
+                ecc: '0.0463',
+                inc: '0.773°',
+                omega: '96.99°',
+                meanAnom: '142.23°',
+                peri: '2,742.50M km',
+                apo: '3,006.39M km',
+                class: 'Ice Giant System',
+                hasClouds: false,
+                hasRings: false
+            },
+            'Neptune': {
+                texture: "url('https://www.solarsystemscope.com/textures/download/2k_neptune.jpg')",
+                glow: "0 0 35px rgba(65, 105, 225, 0.5)",
+                velocity: '5.43 km/sec',
+                grav: '11.15 m/sec²',
+                ecc: '0.0095',
+                inc: '1.770°',
+                omega: '265.64°',
+                meanAnom: '259.90°',
+                peri: '4,461.38M km',
+                apo: '4,547.41M km',
+                class: 'Ice Giant System',
+                hasClouds: false,
+                hasRings: false
+            }
+        };
+
+        // Initialize UI Control Interfaces dynamically
+        function initNav() {
+            const container = document.getElementById('planet-nav');
+            container.innerHTML = '';
+            Object.keys(planetData).forEach((name, idx) => {
+                const btn = document.createElement('button');
+                btn.innerText = name;
+                btn.id = `btn-${name}`;
+                btn.onclick = () => switchPlanet(name);
+                if(name === 'Earth') btn.classList.add('active');
+                container.appendChild(btn);
+            });
+        }
+
+        // Handle full HUD matrix updates across systemic telemetry switches
+        function switchPlanet(planetName) {
+            const data = planetData[planetName];
+            if (!data) return;
+            
+            // Toggle Selector Buttons Styles
+            document.querySelectorAll('.nav-buttons button').forEach(b => b.classList.remove('active'));
+            const activeBtn = document.getElementById(`btn-${planetName}`);
+            if(activeBtn) activeBtn.classList.add('active');
+
+            // Cache UI Elements
+            const bodyEl = document.getElementById('planet-body');
+            const cloudsEl = document.getElementById('planet-clouds');
+            const ringsEl = document.getElementById('planet-rings');
+            
+            // Map Primary Surface Properties & Atmosphere Glow
+            bodyEl.style.background = data.texture;
+            bodyEl.style.boxShadow = data.glow;
+            
+            // Map High-Fidelity Multi-layered Cloud System (Oceans vs Cloud interaction)
+            if (data.hasClouds) {
+                cloudsEl.style.display = 'block';
+                cloudsEl.style.backgroundImage = data.clouds;
+            } else {
+                cloudsEl.style.display = 'none';
+            }
+
+            // Map Planetary Ring Configurations
+            if (data.hasRings) {
+                ringsEl.style.display = 'block';
+                ringsEl.style.background = data.ringGradient;
+            } else {
+                ringsEl.style.display = 'none';
+            }
+            
+            // Refresh Telemetry Display Modules
+            document.getElementById('hud-target-name').innerText = planetName;
+            document.getElementById('nearest-body').innerText = planetName;
+            document.getElementById('orbit-body').innerText = planetName;
+            document.getElementById('ship-class').innerText = data.class;
+            
+            // Update Metric Scalars
+            document.getElementById('hud-velocity').innerText = data.velocity;
+            document.getElementById('ship-vel-data').innerText = data.velocity;
+            document.getElementById('grav-accel').innerText = data.grav;
+            document.getElementById('eccentricity').innerText = data.ecc;
+            document.getElementById('inclination').innerText = data.inc;
+            document.getElementById('peri-arg').innerText = data.omega;
+            document.getElementById('mean-anom').innerText = data.meanAnom;
+            document.getElementById('r-peri').innerText = data.peri;
+            document.getElementById('r-apo').innerText = data.apo;
+        }
+
+        // Boot-up Execution Context
+        window.onload = () => {
+            initNav();
+            switchPlanet('Earth'); // Defaults initialization map sequence onto Earth
+        };
+    </script>
+</body>
+</html>
